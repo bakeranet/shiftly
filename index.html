@@ -793,7 +793,7 @@ function WorkerManager() {
         body { margin: 0; background: #12121F; }
       `}</style>
       {tab !== "profile" && (
-        <div style={{ padding: "20px 20px 16px", background: "linear-gradient(180deg, #1A1A2E 0%, #12121F 100%)" }}>
+        <div style={{ padding: "20px 20px 16px", paddingTop: "calc(20px + env(safe-area-inset-top, 0px))", background: "linear-gradient(180deg, #1A1A2E 0%, #12121F 100%)" }}>
           <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
             <div style={{ width: 42, height: 42, borderRadius: 13, background: "linear-gradient(135deg, #E8654A, #F5C842)", display: "flex", alignItems: "center", justifyContent: "center" }}><Icon d={IC.users} size={22} color="#fff" /></div>
             <div>
@@ -804,13 +804,13 @@ function WorkerManager() {
           </div>
         </div>
       )}
-      <div style={{ padding: tab === "profile" ? "16px 16px 24px" : "8px 16px 24px" }}>
+      <div style={{ padding: tab === "profile" ? "16px 16px 24px" : "8px 16px 24px", paddingTop: tab === "profile" ? "calc(16px + env(safe-area-inset-top, 0px))" : undefined }}>
         {tab === "calendar" && renderCalendar()}
         {tab === "workers" && renderWorkers()}
         {tab === "hours" && renderTimeRanges()}
         {tab === "profile" && renderProfile()}
       </div>
-      <div style={{ position: "fixed", bottom: 0, left: "50%", transform: "translateX(-50%)", width: "100%", maxWidth: 480, background: "linear-gradient(180deg, transparent 0%, #12121F 20%)", padding: "12px 20px 20px" }}>
+      <div style={{ position: "fixed", bottom: 0, left: "50%", transform: "translateX(-50%)", width: "100%", maxWidth: 480, background: "linear-gradient(180deg, transparent 0%, #12121F 20%)", padding: "12px 20px 20px", paddingBottom: "calc(20px + env(safe-area-inset-bottom, 0px))" }}>
         <div style={{ display: "flex", justifyContent: "space-around", background: "rgba(26,26,46,0.95)", backdropFilter: "blur(20px)", borderRadius: 20, padding: "8px 4px", border: "1px solid rgba(255,255,255,0.06)", boxShadow: "0 -4px 24px rgba(0,0,0,0.3)" }}>
           {tabsList.map(t => {
             const active = t.key === tab || (t.key === "workers" && tab === "profile");
