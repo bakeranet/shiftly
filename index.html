@@ -1,0 +1,854 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+<meta name="theme-color" content="#12121F">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Shiftly">
+<link rel="apple-touch-icon" href="icons/icon-192.png">
+<link rel="manifest" href="manifest.json">
+<title>Shiftly</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=DM+Serif+Display&display=swap" rel="stylesheet">
+<style>
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html, body { margin: 0; padding: 0; background: #12121F; overflow-x: hidden; }
+  @keyframes fadeIn { from { opacity: 0 } to { opacity: 1 } }
+  @keyframes slideUp { from { transform: translateY(100%) } to { transform: translateY(0) } }
+  ::-webkit-scrollbar { width: 4px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  ::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.1); border-radius: 4px; }
+  #splash { position:fixed;inset:0;background:#12121F;display:flex;align-items:center;justify-content:center;z-index:9999;transition:opacity .3s }
+  #splash.hide { opacity:0;pointer-events:none }
+  .splash-logo { width:64px;height:64px;border-radius:16px;background:linear-gradient(135deg,#E8654A,#F5C842);display:flex;align-items:center;justify-content:center;animation:pulse 1.5s infinite }
+  @keyframes pulse { 0%,100%{transform:scale(1)} 50%{transform:scale(1.08)} }
+</style>
+</head>
+<body>
+<div id="splash"><div class="splash-logo"><svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2M9 11a4 4 0 100-8 4 4 0 000 8M23 21v-2a4 4 0 00-3-3.87M16 3.13a4 4 0 010 7.75"/></svg></div></div>
+<div id="root"></div>
+<script src="https://unpkg.com/react@18/umd/react.production.min.js" crossorigin></script>
+<script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js" crossorigin></script>
+<script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+<script src="https://cdn.sheetjs.com/xlsx-0.20.1/package/dist/xlsx.full.min.js"></script>
+<script type="text/babel">
+// ─── LocalStorage persistence ───────────────────────────────────────
+const STORAGE_KEY = 'shiftly_data';
+function loadState(init) {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY);
+    if (raw) return JSON.parse(raw);
+  } catch(e) {}
+  return init;
+}
+function saveState(state) {
+  try { localStorage.setItem(STORAGE_KEY, JSON.stringify(state)); } catch(e) {}
+}
+function reducerWithSave(state, action) {
+  const next = reducer(state, action);
+  saveState(next);
+  return next;
+}
+
+const { useState, useReducer, useEffect } = React;
+
+// ─── State ──────────────────────────────────────────────────────────
+const initialState = {
+  workers: [
+    { id: "w1", name: "Carlos García", role: "Camarero", color: "#E8654A", hourlyRate: 12 },
+    { id: "w2", name: "María López", role: "Cocinera", color: "#4A90D9", hourlyRate: 14 },
+    { id: "w3", name: "Pedro Ruiz", role: "Encargado", color: "#6BBF59", hourlyRate: 16 },
+  ],
+  timeRanges: [
+    { id: "tr1", name: "Mañana", start: "08:00", end: "14:00", color: "#F5C842", split: false, start2: "", end2: "" },
+    { id: "tr2", name: "Tarde", start: "14:00", end: "21:00", color: "#E8654A", split: false, start2: "", end2: "" },
+    { id: "tr3", name: "Noche", start: "21:00", end: "03:00", color: "#6366F1", split: false, start2: "", end2: "" },
+    { id: "tr4", name: "Partido Cocina", start: "10:00", end: "14:00", color: "#9B59B6", split: true, start2: "17:00", end2: "21:00" },
+    { id: "tr5", name: "Partido Sala", start: "09:00", end: "13:00", color: "#1ABC9C", split: true, start2: "18:00", end2: "23:00" },
+  ],
+  shifts: [
+    { id: "s1", workerId: "w1", date: "2026-03-02", timeRangeId: "tr1" },
+    { id: "s2", workerId: "w2", date: "2026-03-02", timeRangeId: "tr4" },
+    { id: "s3", workerId: "w3", date: "2026-03-02", timeRangeId: "tr1" },
+    { id: "s4", workerId: "w1", date: "2026-03-03", timeRangeId: "tr2" },
+    { id: "s5", workerId: "w2", date: "2026-03-03", timeRangeId: "tr1" },
+    { id: "s6", workerId: "w1", date: "2026-03-05", timeRangeId: "tr4" },
+    { id: "s7", workerId: "w3", date: "2026-03-05", timeRangeId: "tr3" },
+    { id: "s8", workerId: "w2", date: "2026-03-07", timeRangeId: "tr2" },
+    { id: "s9", workerId: "w1", date: "2026-03-09", timeRangeId: "tr5" },
+    { id: "s10", workerId: "w3", date: "2026-03-09", timeRangeId: "tr1" },
+    { id: "s11", workerId: "w1", date: "2026-03-10", timeRangeId: "tr1" },
+    { id: "s12", workerId: "w2", date: "2026-03-10", timeRangeId: "tr3" },
+    { id: "s13", workerId: "w1", date: "2026-03-12", timeRangeId: "tr2" },
+    { id: "s14", workerId: "w3", date: "2026-03-12", timeRangeId: "tr4" },
+    { id: "s15", workerId: "w2", date: "2026-03-14", timeRangeId: "tr5" },
+    { id: "s16", workerId: "w1", date: "2026-03-15", timeRangeId: "tr1" },
+    { id: "s17", workerId: "w2", date: "2026-03-15", timeRangeId: "tr2" },
+    { id: "s18", workerId: "w3", date: "2026-03-15", timeRangeId: "tr5" },
+  ],
+};
+
+function reducer(state, action) {
+  switch (action.type) {
+    case "ADD_WORKER": return { ...state, workers: [...state.workers, action.payload] };
+    case "EDIT_WORKER": return { ...state, workers: state.workers.map(w => w.id === action.payload.id ? action.payload : w) };
+    case "DELETE_WORKER": return { ...state, workers: state.workers.filter(w => w.id !== action.payload), shifts: state.shifts.filter(s => s.workerId !== action.payload) };
+    case "ADD_TIME_RANGE": return { ...state, timeRanges: [...state.timeRanges, action.payload] };
+    case "EDIT_TIME_RANGE": return { ...state, timeRanges: state.timeRanges.map(tr => tr.id === action.payload.id ? action.payload : tr) };
+    case "DELETE_TIME_RANGE": return { ...state, timeRanges: state.timeRanges.filter(tr => tr.id !== action.payload), shifts: state.shifts.filter(s => s.timeRangeId !== action.payload) };
+    case "ADD_SHIFT": return { ...state, shifts: [...state.shifts, action.payload] };
+    case "DELETE_SHIFT": return { ...state, shifts: state.shifts.filter(s => s.id !== action.payload) };
+    default: return state;
+  }
+}
+
+// ─── Helpers ────────────────────────────────────────────────────────
+const uid = () => Math.random().toString(36).slice(2, 10);
+function getMonthDays(year, month) {
+  const firstDay = new Date(year, month, 1).getDay();
+  const daysInMonth = new Date(year, month + 1, 0).getDate();
+  const offset = firstDay === 0 ? 6 : firstDay - 1;
+  const days = [];
+  for (let i = 0; i < offset; i++) days.push(null);
+  for (let d = 1; d <= daysInMonth; d++) days.push(d);
+  return days;
+}
+function fmtDate(y, m, d) { return `${y}-${String(m + 1).padStart(2, "0")}-${String(d).padStart(2, "0")}`; }
+function rawH(start, end) {
+  const [sh, sm] = start.split(":").map(Number);
+  const [eh, em] = end.split(":").map(Number);
+  let diff = (eh * 60 + em) - (sh * 60 + sm);
+  if (diff <= 0) diff += 24 * 60;
+  return diff / 60;
+}
+// Total hours for a time range (handles split)
+function trHours(tr) {
+  let h = rawH(tr.start, tr.end);
+  if (tr.split && tr.start2 && tr.end2) h += rawH(tr.start2, tr.end2);
+  return h;
+}
+// Format time range display string
+function trDisplay(tr) {
+  if (tr.split && tr.start2 && tr.end2) return `${tr.start}–${tr.end} + ${tr.start2}–${tr.end2}`;
+  return `${tr.start}–${tr.end}`;
+}
+const fmtMoney = n => n.toLocaleString("es-ES", { style: "currency", currency: "EUR" });
+const MONTHS = ["Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio", "Julio", "Agosto", "Septiembre", "Octubre", "Noviembre", "Diciembre"];
+const DAYS_H = ["L", "M", "X", "J", "V", "S", "D"];
+const COLORS = ["#E8654A", "#4A90D9", "#6BBF59", "#F5C842", "#9B59B6", "#1ABC9C", "#E67E22", "#E74C3C", "#3498DB", "#2ECC71"];
+
+// ─── Icons ──────────────────────────────────────────────────────────
+const Icon = ({ d, size = 20, color = "currentColor" }) => (
+  <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d={d} /></svg>
+);
+const IC = {
+  plus: "M12 5v14M5 12h14", trash: "M3 6h18M8 6V4a2 2 0 012-2h4a2 2 0 012 2v2M19 6l-1 14a2 2 0 01-2 2H8a2 2 0 01-2-2L5 6",
+  edit: "M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7M18.5 2.5a2.12 2.12 0 013 3L12 15l-4 1 1-4 9.5-9.5z",
+  chevL: "M15 18l-6-6 6-6", chevR: "M9 6l6 6-6 6",
+  users: "M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2M9 11a4 4 0 100-8 4 4 0 000 8M23 21v-2a4 4 0 00-3-3.87M16 3.13a4 4 0 010 7.75",
+  clock: "M12 2a10 10 0 100 20 10 10 0 000-20zM12 6v6l4 2",
+  cal: "M19 4H5a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2V6a2 2 0 00-2-2zM16 2v4M8 2v4M3 10h18",
+  x: "M18 6L6 18M6 6l12 12", check: "M20 6L9 17l-5-5",
+  back: "M19 12H5M12 19l-7-7 7-7",
+  split: "M16 3l4 4-4 4M8 3L4 7l4 4M21 7H3M16 13l4 4-4 4M8 13l-4 4 4 4M21 17H3",
+  download: "M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4M7 10l5 5 5-5M12 15V3",
+};
+
+// ─── UI Atoms ───────────────────────────────────────────────────────
+const Modal = ({ children, onClose, title }) => (
+  <div style={{ position: "fixed", inset: 0, zIndex: 100, display: "flex", alignItems: "flex-end", justifyContent: "center", background: "rgba(0,0,0,0.5)", backdropFilter: "blur(4px)", animation: "fadeIn .2s ease" }} onClick={onClose}>
+    <div style={{ background: "#1A1A2E", borderRadius: "20px 20px 0 0", width: "100%", maxWidth: 480, maxHeight: "85vh", overflow: "auto", padding: "24px 20px 32px", animation: "slideUp .3s ease", boxShadow: "0 -8px 40px rgba(0,0,0,0.4)" }} onClick={e => e.stopPropagation()}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 20 }}>
+        <h3 style={{ margin: 0, fontSize: 18, fontWeight: 700, color: "#F0EDE6" }}>{title}</h3>
+        <button onClick={onClose} style={{ background: "rgba(255,255,255,0.08)", border: "none", borderRadius: 10, padding: 8, cursor: "pointer", color: "#F0EDE6" }}><Icon d={IC.x} size={18} /></button>
+      </div>
+      {children}
+    </div>
+  </div>
+);
+const Inp = ({ label, ...p }) => (
+  <div style={{ marginBottom: 16 }}>
+    {label && <label style={{ display: "block", fontSize: 12, fontWeight: 600, color: "#9B97A0", marginBottom: 6, textTransform: "uppercase", letterSpacing: 1 }}>{label}</label>}
+    <input {...p} style={{ width: "100%", padding: "12px 14px", background: "rgba(255,255,255,0.06)", border: "1px solid rgba(255,255,255,0.1)", borderRadius: 12, color: "#F0EDE6", fontSize: 15, outline: "none", boxSizing: "border-box", transition: "border-color .2s", ...(p.style || {}) }}
+      onFocus={e => e.target.style.borderColor = "#E8654A"} onBlur={e => e.target.style.borderColor = "rgba(255,255,255,0.1)"} />
+  </div>
+);
+const Btn = ({ children, variant = "primary", ...p }) => {
+  const s = { primary: { background: "#E8654A", color: "#fff" }, secondary: { background: "rgba(255,255,255,0.08)", color: "#F0EDE6" }, danger: { background: "#E74C3C33", color: "#E74C3C" } };
+  return <button {...p} style={{ padding: "12px 20px", border: "none", borderRadius: 12, fontSize: 14, fontWeight: 600, cursor: "pointer", transition: "all .2s", display: "flex", alignItems: "center", gap: 8, ...s[variant], ...(p.style || {}) }}>{children}</button>;
+};
+const StatCard = ({ label, value, sub, accent }) => (
+  <div style={{ background: "rgba(255,255,255,0.04)", borderRadius: 16, padding: "16px 14px", flex: 1, minWidth: 0, borderTop: `3px solid ${accent || "#E8654A"}` }}>
+    <div style={{ fontSize: 11, fontWeight: 600, color: "#6B6780", textTransform: "uppercase", letterSpacing: 0.8, marginBottom: 6 }}>{label}</div>
+    <div style={{ fontSize: 22, fontWeight: 700, color: "#F0EDE6", fontFamily: "'DM Serif Display', serif" }}>{value}</div>
+    {sub && <div style={{ fontSize: 12, color: "#9B97A0", marginTop: 4 }}>{sub}</div>}
+  </div>
+);
+const SplitBadge = ({ small }) => (
+  <span style={{ display: "inline-flex", alignItems: "center", gap: 3, padding: small ? "1px 5px" : "2px 7px", borderRadius: 5, background: "rgba(155,89,182,0.18)", color: "#9B59B6", fontSize: small ? 9 : 10, fontWeight: 700, letterSpacing: 0.4, textTransform: "uppercase", flexShrink: 0 }}>
+    <svg width={small ? 8 : 10} height={small ? 8 : 10} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M16 3l4 4-4 4M8 3L4 7l4 4M21 7H3" /></svg>
+    Partido
+  </span>
+);
+
+// ─── Main App ───────────────────────────────────────────────────────
+function WorkerManager() {
+  const [state, dispatch] = useReducer(reducerWithSave, initialState, loadState);
+  const [tab, setTab] = useState("calendar");
+  const [selectedDate, setSelectedDate] = useState(null);
+  const [calYear, setCalYear] = useState(2026);
+  const [calMonth, setCalMonth] = useState(2);
+  const [modal, setModal] = useState(null);
+  const [formData, setFormData] = useState({});
+  const [profileWorkerId, setProfileWorkerId] = useState(null);
+  const [profileYear, setProfileYear] = useState(2026);
+  const [profileMonth, setProfileMonth] = useState(2);
+
+  const today = new Date();
+  const todayStr = fmtDate(today.getFullYear(), today.getMonth(), today.getDate());
+
+  const getWorkerMonthStats = (workerId, year, month) => {
+    const prefix = `${year}-${String(month + 1).padStart(2, "0")}`;
+    const monthShifts = state.shifts.filter(s => s.workerId === workerId && s.date.startsWith(prefix));
+    const worker = state.workers.find(w => w.id === workerId);
+    let totalH = 0;
+    const byRange = {};
+    const byDay = {};
+    monthShifts.forEach(s => {
+      const tr = state.timeRanges.find(t => t.id === s.timeRangeId);
+      if (!tr) return;
+      const h = trHours(tr);
+      totalH += h;
+      byRange[tr.id] = (byRange[tr.id] || 0) + h;
+      const day = parseInt(s.date.split("-")[2]);
+      byDay[day] = (byDay[day] || 0) + h;
+    });
+    const rate = worker?.hourlyRate || 0;
+    const grossPay = totalH * rate;
+    const ss = grossPay * 0.0635;
+    const irpf = grossPay * 0.15;
+    const netPay = grossPay - ss - irpf;
+    return { shifts: monthShifts, totalH, byRange, byDay, rate, grossPay, ss, irpf, netPay, daysWorked: Object.keys(byDay).length };
+  };
+
+  // ── EXPORT TO EXCEL ─────────────────────────────────────────────
+  const exportAllToExcel = () => {
+    const wb = XLSX.utils.book_new();
+
+    // Sheet 1: Trabajadores
+    const wRows = state.workers.map(w => {
+      const stats = getWorkerMonthStats(w.id, calYear, calMonth);
+      return { Nombre: w.name, Puesto: w.role, "€/h": w.hourlyRate, Color: w.color, "Días trabajados": stats.daysWorked, "Horas totales": +stats.totalH.toFixed(1), "Bruto (€)": +stats.grossPay.toFixed(2), "SS (€)": +stats.ss.toFixed(2), "IRPF (€)": +stats.irpf.toFixed(2), "Neto (€)": +stats.netPay.toFixed(2) };
+    });
+    const ws1 = XLSX.utils.json_to_sheet(wRows);
+    ws1["!cols"] = [{ wch: 22 },{ wch: 16 },{ wch: 8 },{ wch: 10 },{ wch: 16 },{ wch: 14 },{ wch: 12 },{ wch: 10 },{ wch: 10 },{ wch: 12 }];
+    XLSX.utils.book_append_sheet(wb, ws1, "Trabajadores");
+
+    // Sheet 2: Rangos Horarios
+    const trRows = state.timeRanges.map(tr => ({
+      Nombre: tr.name, Inicio: tr.start, Fin: tr.end, Partido: tr.split ? "Sí" : "No",
+      "Inicio 2": tr.split ? tr.start2 : "", "Fin 2": tr.split ? tr.end2 : "",
+      "Horas totales": +trHours(tr).toFixed(1)
+    }));
+    const ws2 = XLSX.utils.json_to_sheet(trRows);
+    ws2["!cols"] = [{ wch: 20 },{ wch: 8 },{ wch: 8 },{ wch: 10 },{ wch: 10 },{ wch: 8 },{ wch: 14 }];
+    XLSX.utils.book_append_sheet(wb, ws2, "Rangos Horarios");
+
+    // Sheet 3: Todos los turnos
+    const sRows = state.shifts.sort((a,b) => a.date.localeCompare(b.date)).map(s => {
+      const w = state.workers.find(x => x.id === s.workerId);
+      const tr = state.timeRanges.find(x => x.id === s.timeRangeId);
+      const h = tr ? trHours(tr) : 0;
+      return { Fecha: s.date, Trabajador: w?.name || "", Puesto: w?.role || "", Turno: tr?.name || "", Horario: tr ? trDisplay(tr) : "", Partido: tr?.split ? "Sí" : "No", Horas: +h.toFixed(1), "€/h": w?.hourlyRate || 0, "Coste (€)": +(h * (w?.hourlyRate || 0)).toFixed(2) };
+    });
+    const ws3 = XLSX.utils.json_to_sheet(sRows);
+    ws3["!cols"] = [{ wch: 12 },{ wch: 22 },{ wch: 14 },{ wch: 18 },{ wch: 26 },{ wch: 10 },{ wch: 8 },{ wch: 8 },{ wch: 12 }];
+    XLSX.utils.book_append_sheet(wb, ws3, "Turnos");
+
+    // Sheet 4: Resumen mensual por trabajador
+    const monthPrefix = `${calYear}-${String(calMonth + 1).padStart(2, "0")}`;
+    const summaryRows = state.workers.map(w => {
+      const stats = getWorkerMonthStats(w.id, calYear, calMonth);
+      const byRangeStr = Object.entries(stats.byRange).map(([trId, h]) => {
+        const tr = state.timeRanges.find(t => t.id === trId);
+        return `${tr?.name || trId}: ${h.toFixed(1)}h`;
+      }).join(", ");
+      return { Mes: `${MONTHS[calMonth]} ${calYear}`, Trabajador: w.name, "€/h": w.hourlyRate, "Días": stats.daysWorked, Turnos: stats.shifts.length, "Horas": +stats.totalH.toFixed(1), "Desglose turnos": byRangeStr, "Bruto (€)": +stats.grossPay.toFixed(2), "SS 6.35% (€)": +stats.ss.toFixed(2), "IRPF 15% (€)": +stats.irpf.toFixed(2), "Neto (€)": +stats.netPay.toFixed(2) };
+    });
+    const ws4 = XLSX.utils.json_to_sheet(summaryRows);
+    ws4["!cols"] = [{ wch: 16 },{ wch: 22 },{ wch: 8 },{ wch: 6 },{ wch: 8 },{ wch: 8 },{ wch: 40 },{ wch: 12 },{ wch: 14 },{ wch: 14 },{ wch: 12 }];
+    XLSX.utils.book_append_sheet(wb, ws4, "Resumen Mensual");
+
+    XLSX.writeFile(wb, `Shiftly_${calYear}-${String(calMonth+1).padStart(2,"0")}.xlsx`);
+  };
+
+  const exportWorkerToExcel = (workerId, year, month) => {
+    const worker = state.workers.find(w => w.id === workerId);
+    if (!worker) return;
+    const stats = getWorkerMonthStats(workerId, year, month);
+    const wb = XLSX.utils.book_new();
+
+    // Resumen
+    const summary = [
+      ["Trabajador", worker.name], ["Puesto", worker.role], ["€/hora", worker.hourlyRate],
+      ["Mes", `${MONTHS[month]} ${year}`], [""], ["Días trabajados", stats.daysWorked],
+      ["Horas totales", +stats.totalH.toFixed(1)], ["Turnos", stats.shifts.length], [""],
+      ["Salario bruto", +stats.grossPay.toFixed(2)], ["Seg. Social (6,35%)", +stats.ss.toFixed(2)],
+      ["IRPF (15%)", +stats.irpf.toFixed(2)], ["Neto estimado", +stats.netPay.toFixed(2)],
+    ];
+    const ws1 = XLSX.utils.aoa_to_sheet(summary);
+    ws1["!cols"] = [{ wch: 20 }, { wch: 18 }];
+    XLSX.utils.book_append_sheet(wb, ws1, "Resumen");
+
+    // Turnos detalle
+    const rows = stats.shifts.sort((a,b) => a.date.localeCompare(b.date)).map(s => {
+      const tr = state.timeRanges.find(t => t.id === s.timeRangeId);
+      const h = tr ? trHours(tr) : 0;
+      return { Fecha: s.date, Turno: tr?.name || "", Horario: tr ? trDisplay(tr) : "", Partido: tr?.split ? "Sí" : "No", Horas: +h.toFixed(1), "Coste (€)": +(h * worker.hourlyRate).toFixed(2) };
+    });
+    const ws2 = XLSX.utils.json_to_sheet(rows);
+    ws2["!cols"] = [{ wch: 12 },{ wch: 18 },{ wch: 26 },{ wch: 10 },{ wch: 8 },{ wch: 12 }];
+    XLSX.utils.book_append_sheet(wb, ws2, "Turnos");
+
+    XLSX.writeFile(wb, `${worker.name.replace(/\s+/g,"_")}_${year}-${String(month+1).padStart(2,"0")}.xlsx`);
+  };
+
+  // ── CALENDAR ────────────────────────────────────────────────────
+  const renderCalendar = () => {
+    const days = getMonthDays(calYear, calMonth);
+    const prevMonth = () => { if (calMonth === 0) { setCalMonth(11); setCalYear(y => y - 1); } else setCalMonth(m => m - 1); };
+    const nextMonth = () => { if (calMonth === 11) { setCalMonth(0); setCalYear(y => y + 1); } else setCalMonth(m => m + 1); };
+    return (
+      <div>
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 24, padding: "0 4px" }}>
+          <button onClick={prevMonth} style={{ background: "rgba(255,255,255,0.06)", border: "none", borderRadius: 12, padding: 10, cursor: "pointer", color: "#F0EDE6" }}><Icon d={IC.chevL} size={18} /></button>
+          <h2 style={{ margin: 0, fontSize: 20, fontWeight: 700, color: "#F0EDE6", fontFamily: "'DM Serif Display', serif" }}>{MONTHS[calMonth]} {calYear}</h2>
+          <button onClick={nextMonth} style={{ background: "rgba(255,255,255,0.06)", border: "none", borderRadius: 12, padding: 10, cursor: "pointer", color: "#F0EDE6" }}><Icon d={IC.chevR} size={18} /></button>
+        </div>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(7, 1fr)", gap: 4, marginBottom: 8 }}>
+          {DAYS_H.map(d => <div key={d} style={{ textAlign: "center", fontSize: 11, fontWeight: 700, color: "#6B6780", textTransform: "uppercase", letterSpacing: 1, padding: "4px 0" }}>{d}</div>)}
+        </div>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(7, 1fr)", gap: 4 }}>
+          {days.map((day, i) => {
+            if (!day) return <div key={`e-${i}`} />;
+            const ds = fmtDate(calYear, calMonth, day);
+            const dShifts = state.shifts.filter(s => s.date === ds);
+            const isT = ds === todayStr, isSel = ds === selectedDate;
+            return (
+              <button key={i} onClick={() => setSelectedDate(ds === selectedDate ? null : ds)} style={{
+                background: isSel ? "#E8654A" : isT ? "rgba(232,101,74,0.15)" : "rgba(255,255,255,0.03)",
+                border: isT && !isSel ? "1px solid rgba(232,101,74,0.4)" : "1px solid transparent",
+                borderRadius: 14, padding: "10px 4px 8px", cursor: "pointer",
+                display: "flex", flexDirection: "column", alignItems: "center", gap: 4, minHeight: 62, transition: "all .2s",
+              }}>
+                <span style={{ fontSize: 14, fontWeight: isT ? 800 : 500, color: isSel ? "#fff" : isT ? "#E8654A" : "#F0EDE6" }}>{day}</span>
+                {dShifts.length > 0 && (
+                  <div style={{ display: "flex", gap: 3, flexWrap: "wrap", justifyContent: "center" }}>
+                    {dShifts.slice(0, 3).map(s => { const w = state.workers.find(w => w.id === s.workerId); return w ? <div key={s.id} style={{ width: 7, height: 7, borderRadius: "50%", background: w.color, opacity: isSel ? 0.9 : 0.7 }} /> : null; })}
+                    {dShifts.length > 3 && <span style={{ fontSize: 8, color: isSel ? "#fff" : "#9B97A0" }}>+{dShifts.length - 3}</span>}
+                  </div>
+                )}
+              </button>
+            );
+          })}
+        </div>
+        {selectedDate && renderDayDetail()}
+      </div>
+    );
+  };
+
+  const renderDayDetail = () => {
+    const dayShifts = state.shifts.filter(s => s.date === selectedDate);
+    const dateObj = new Date(selectedDate + "T12:00:00");
+    const dayName = ["Domingo", "Lunes", "Martes", "Miércoles", "Jueves", "Viernes", "Sábado"][dateObj.getDay()];
+    const d = parseInt(selectedDate.split("-")[2]);
+    let totalH = 0, totalCost = 0;
+    dayShifts.forEach(s => {
+      const tr = state.timeRanges.find(t => t.id === s.timeRangeId);
+      const w = state.workers.find(w => w.id === s.workerId);
+      if (tr) { const h = trHours(tr); totalH += h; if (w) totalCost += h * (w.hourlyRate || 0); }
+    });
+    return (
+      <div style={{ marginTop: 24, animation: "fadeIn .3s ease" }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
+          <div>
+            <h3 style={{ margin: 0, fontSize: 18, fontWeight: 700, color: "#F0EDE6" }}>{dayName} {d}</h3>
+            <span style={{ fontSize: 12, color: "#9B97A0" }}>{dayShifts.length} turno{dayShifts.length !== 1 ? "s" : ""} · {totalH.toFixed(1)}h · {fmtMoney(totalCost)}</span>
+          </div>
+          <Btn onClick={() => { setFormData({ date: selectedDate, workerId: "", timeRangeId: "" }); setModal("addShift"); }} style={{ padding: "8px 14px", fontSize: 13 }}><Icon d={IC.plus} size={16} /> Turno</Btn>
+        </div>
+        {dayShifts.length === 0 ? (
+          <div style={{ textAlign: "center", padding: 32, color: "#6B6780", fontSize: 14 }}>Sin turnos asignados</div>
+        ) : (
+          <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+            {dayShifts.map(shift => {
+              const w = state.workers.find(w => w.id === shift.workerId);
+              const tr = state.timeRanges.find(t => t.id === shift.timeRangeId);
+              if (!w || !tr) return null;
+              const h = trHours(tr);
+              return (
+                <div key={shift.id} style={{ display: "flex", alignItems: "center", gap: 12, background: "rgba(255,255,255,0.04)", borderRadius: 14, padding: "12px 14px", borderLeft: `4px solid ${w.color}` }}>
+                  <div style={{ width: 40, height: 40, borderRadius: 12, background: `${w.color}22`, color: w.color, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 16, fontWeight: 700, flexShrink: 0 }}>{w.name.charAt(0)}</div>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ fontSize: 14, fontWeight: 600, color: "#F0EDE6", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{w.name}</div>
+                    <div style={{ fontSize: 12, color: "#9B97A0", display: "flex", alignItems: "center", gap: 5, flexWrap: "wrap", marginTop: 2 }}>
+                      <span style={{ padding: "2px 8px", borderRadius: 6, background: `${tr.color}22`, color: tr.color, fontSize: 11, fontWeight: 600 }}>{tr.name}</span>
+                      {tr.split && <SplitBadge small />}
+                    </div>
+                    <div style={{ fontSize: 11, color: "#6B6780", marginTop: 3 }}>
+                      {trDisplay(tr)} · {h.toFixed(1)}h · {fmtMoney(h * (w.hourlyRate || 0))}
+                    </div>
+                  </div>
+                  <button onClick={() => dispatch({ type: "DELETE_SHIFT", payload: shift.id })} style={{ background: "none", border: "none", cursor: "pointer", color: "#6B6780", padding: 6 }}><Icon d={IC.trash} size={16} /></button>
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </div>
+    );
+  };
+
+  // ── WORKERS ─────────────────────────────────────────────────────
+  const renderWorkers = () => (
+    <div>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 20 }}>
+        <h2 style={{ margin: 0, fontSize: 20, fontWeight: 700, color: "#F0EDE6", fontFamily: "'DM Serif Display', serif" }}>Equipo</h2>
+        <Btn onClick={() => { setFormData({ name: "", role: "", color: COLORS[state.workers.length % COLORS.length], hourlyRate: 10 }); setModal("addWorker"); }} style={{ padding: "8px 14px", fontSize: 13 }}><Icon d={IC.plus} size={16} /> Nuevo</Btn>
+      </div>
+      <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+        {state.workers.map(worker => {
+          const stats = getWorkerMonthStats(worker.id, calYear, calMonth);
+          return (
+            <div key={worker.id} onClick={() => { setProfileWorkerId(worker.id); setProfileYear(calYear); setProfileMonth(calMonth); setTab("profile"); }}
+              style={{ background: "rgba(255,255,255,0.04)", borderRadius: 16, padding: 16, display: "flex", alignItems: "center", gap: 14, borderLeft: `4px solid ${worker.color}`, cursor: "pointer", transition: "all .2s" }}>
+              <div style={{ width: 48, height: 48, borderRadius: 14, background: `${worker.color}22`, color: worker.color, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 20, fontWeight: 700, flexShrink: 0 }}>{worker.name.charAt(0)}</div>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ fontSize: 15, fontWeight: 600, color: "#F0EDE6" }}>{worker.name}</div>
+                <div style={{ fontSize: 12, color: "#9B97A0", marginTop: 2 }}>{worker.role} · {fmtMoney(worker.hourlyRate || 0)}/h</div>
+                <div style={{ fontSize: 11, color: "#6B6780", marginTop: 4 }}>{stats.daysWorked} días · {stats.totalH.toFixed(1)}h · {fmtMoney(stats.grossPay)} bruto</div>
+              </div>
+              <Icon d={IC.chevR} size={18} color="#6B6780" />
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+
+  // ── PROFILE ─────────────────────────────────────────────────────
+  const renderProfile = () => {
+    const worker = state.workers.find(w => w.id === profileWorkerId);
+    if (!worker) { setTab("workers"); return null; }
+    const stats = getWorkerMonthStats(worker.id, profileYear, profileMonth);
+    const daysInMonth = new Date(profileYear, profileMonth + 1, 0).getDate();
+    const prevM = () => { if (profileMonth === 0) { setProfileMonth(11); setProfileYear(y => y - 1); } else setProfileMonth(m => m - 1); };
+    const nextM = () => { if (profileMonth === 11) { setProfileMonth(0); setProfileYear(y => y + 1); } else setProfileMonth(m => m + 1); };
+    const maxH = Math.max(...Object.values(stats.byDay), 8);
+    return (
+      <div>
+        <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 20 }}>
+          <button onClick={() => setTab("workers")} style={{ background: "rgba(255,255,255,0.06)", border: "none", borderRadius: 12, padding: 10, cursor: "pointer", color: "#F0EDE6" }}><Icon d={IC.back} size={18} /></button>
+          <div style={{ width: 48, height: 48, borderRadius: 14, background: `${worker.color}22`, color: worker.color, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 20, fontWeight: 700 }}>{worker.name.charAt(0)}</div>
+          <div style={{ flex: 1 }}>
+            <div style={{ fontSize: 18, fontWeight: 700, color: "#F0EDE6" }}>{worker.name}</div>
+            <div style={{ fontSize: 13, color: "#9B97A0" }}>{worker.role} · {fmtMoney(worker.hourlyRate || 0)}/h</div>
+          </div>
+          <button onClick={() => { setFormData({ ...worker }); setModal("editWorker"); }} style={{ background: "rgba(255,255,255,0.06)", border: "none", borderRadius: 10, padding: 8, cursor: "pointer", color: "#9B97A0" }}><Icon d={IC.edit} size={16} /></button>
+          <button onClick={() => exportWorkerToExcel(worker.id, profileYear, profileMonth)} title="Exportar mes" style={{ background: "rgba(107,191,89,0.15)", border: "none", borderRadius: 10, padding: 8, cursor: "pointer", color: "#6BBF59" }}><Icon d={IC.download} size={16} color="#6BBF59" /></button>
+        </div>
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 20, background: "rgba(255,255,255,0.04)", borderRadius: 14, padding: "10px 14px" }}>
+          <button onClick={prevM} style={{ background: "none", border: "none", cursor: "pointer", color: "#F0EDE6", padding: 4 }}><Icon d={IC.chevL} size={18} /></button>
+          <span style={{ fontSize: 15, fontWeight: 600, color: "#F0EDE6" }}>{MONTHS[profileMonth]} {profileYear}</span>
+          <button onClick={nextM} style={{ background: "none", border: "none", cursor: "pointer", color: "#F0EDE6", padding: 4 }}><Icon d={IC.chevR} size={18} /></button>
+        </div>
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginBottom: 16 }}>
+          <StatCard label="Horas" value={`${stats.totalH.toFixed(1)}h`} sub={`${stats.daysWorked} días trabajados`} accent={worker.color} />
+          <StatCard label="Turnos" value={stats.shifts.length} sub={`de ${daysInMonth} días del mes`} accent="#F5C842" />
+        </div>
+        {/* Earnings */}
+        <div style={{ background: "rgba(255,255,255,0.04)", borderRadius: 16, padding: 16, marginBottom: 16, borderTop: "3px solid #6BBF59" }}>
+          <div style={{ fontSize: 11, fontWeight: 600, color: "#6B6780", textTransform: "uppercase", letterSpacing: 0.8, marginBottom: 12 }}>Desglose Nómina</div>
+          <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 8 }}><span style={{ fontSize: 14, color: "#9B97A0" }}>Salario bruto</span><span style={{ fontSize: 14, fontWeight: 600, color: "#F0EDE6" }}>{fmtMoney(stats.grossPay)}</span></div>
+          <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 8 }}><span style={{ fontSize: 13, color: "#9B97A0" }}>  Seg. Social (6,35%)</span><span style={{ fontSize: 13, color: "#E74C3C" }}>−{fmtMoney(stats.ss)}</span></div>
+          <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 12 }}><span style={{ fontSize: 13, color: "#9B97A0" }}>  IRPF (15%)</span><span style={{ fontSize: 13, color: "#E74C3C" }}>−{fmtMoney(stats.irpf)}</span></div>
+          <div style={{ height: 1, background: "rgba(255,255,255,0.1)", marginBottom: 12 }} />
+          <div style={{ display: "flex", justifyContent: "space-between" }}><span style={{ fontSize: 15, fontWeight: 700, color: "#6BBF59" }}>Neto estimado</span><span style={{ fontSize: 20, fontWeight: 700, color: "#6BBF59", fontFamily: "'DM Serif Display', serif" }}>{fmtMoney(stats.netPay)}</span></div>
+          <div style={{ fontSize: 11, color: "#6B6780", marginTop: 8, textAlign: "right" }}>{stats.totalH.toFixed(1)}h × {fmtMoney(stats.rate)}/h</div>
+        </div>
+        {/* Bar chart */}
+        <div style={{ background: "rgba(255,255,255,0.04)", borderRadius: 16, padding: 16, marginBottom: 16 }}>
+          <div style={{ fontSize: 11, fontWeight: 600, color: "#6B6780", textTransform: "uppercase", letterSpacing: 0.8, marginBottom: 14 }}>Actividad Diaria</div>
+          <div style={{ display: "flex", alignItems: "flex-end", gap: 2, height: 80 }}>
+            {Array.from({ length: daysInMonth }, (_, i) => {
+              const day = i + 1, h = stats.byDay[day] || 0;
+              const pct = h > 0 ? Math.max((h / maxH) * 100, 8) : 0;
+              return (<div key={day} style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "flex-end", height: "100%" }}><div style={{ width: "100%", maxWidth: 12, borderRadius: 3, height: pct > 0 ? `${pct}%` : 2, background: pct > 0 ? worker.color : "rgba(255,255,255,0.06)", opacity: pct > 0 ? 0.85 : 0.4, transition: "height .3s ease" }} title={`${day}: ${h.toFixed(1)}h`} /></div>);
+            })}
+          </div>
+          <div style={{ display: "flex", justifyContent: "space-between", marginTop: 6 }}><span style={{ fontSize: 10, color: "#6B6780" }}>1</span><span style={{ fontSize: 10, color: "#6B6780" }}>{Math.ceil(daysInMonth / 2)}</span><span style={{ fontSize: 10, color: "#6B6780" }}>{daysInMonth}</span></div>
+        </div>
+        {/* By range */}
+        <div style={{ background: "rgba(255,255,255,0.04)", borderRadius: 16, padding: 16, marginBottom: 16 }}>
+          <div style={{ fontSize: 11, fontWeight: 600, color: "#6B6780", textTransform: "uppercase", letterSpacing: 0.8, marginBottom: 12 }}>Horas por Turno</div>
+          {Object.keys(stats.byRange).length === 0 ? <div style={{ color: "#6B6780", fontSize: 13, textAlign: "center", padding: 12 }}>Sin datos este mes</div> : (
+            <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+              {Object.entries(stats.byRange).map(([trId, hours]) => {
+                const tr = state.timeRanges.find(t => t.id === trId);
+                if (!tr) return null;
+                const pct = stats.totalH > 0 ? (hours / stats.totalH) * 100 : 0;
+                return (<div key={trId}>
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
+                    <span style={{ fontSize: 13, fontWeight: 600, color: tr.color, display: "flex", alignItems: "center", gap: 5 }}>{tr.name} {tr.split && <SplitBadge small />}</span>
+                    <span style={{ fontSize: 13, color: "#9B97A0" }}>{hours.toFixed(1)}h ({pct.toFixed(0)}%)</span>
+                  </div>
+                  <div style={{ height: 8, background: "rgba(255,255,255,0.06)", borderRadius: 4, overflow: "hidden" }}><div style={{ height: "100%", width: `${pct}%`, background: tr.color, borderRadius: 4, transition: "width .5s ease" }} /></div>
+                </div>);
+              })}
+            </div>
+          )}
+        </div>
+        {/* Shifts list */}
+        <div style={{ background: "rgba(255,255,255,0.04)", borderRadius: 16, padding: 16 }}>
+          <div style={{ fontSize: 11, fontWeight: 600, color: "#6B6780", textTransform: "uppercase", letterSpacing: 0.8, marginBottom: 12 }}>Turnos del Mes</div>
+          {stats.shifts.length === 0 ? <div style={{ color: "#6B6780", fontSize: 13, textAlign: "center", padding: 12 }}>Sin turnos este mes</div> : (
+            <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+              {stats.shifts.sort((a, b) => a.date.localeCompare(b.date)).map(s => {
+                const tr = state.timeRanges.find(t => t.id === s.timeRangeId);
+                if (!tr) return null;
+                const sDate = new Date(s.date + "T12:00:00");
+                const dayN = ["Dom", "Lun", "Mar", "Mié", "Jue", "Vie", "Sáb"][sDate.getDay()];
+                const dd = parseInt(s.date.split("-")[2]);
+                const h = trHours(tr);
+                return (
+                  <div key={s.id} style={{ display: "flex", alignItems: "center", gap: 10, padding: "8px 10px", borderRadius: 10, background: "rgba(255,255,255,0.03)" }}>
+                    <div style={{ width: 40, textAlign: "center", flexShrink: 0 }}><div style={{ fontSize: 16, fontWeight: 700, color: "#F0EDE6" }}>{dd}</div><div style={{ fontSize: 10, color: "#6B6780" }}>{dayN}</div></div>
+                    <div style={{ width: 4, height: 28, borderRadius: 2, background: tr.color, flexShrink: 0 }} />
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ fontSize: 13, fontWeight: 500, color: "#F0EDE6", display: "flex", alignItems: "center", gap: 5 }}>{tr.name} {tr.split && <SplitBadge small />}</div>
+                      <div style={{ fontSize: 11, color: "#6B6780" }}>{trDisplay(tr)} · {h.toFixed(1)}h · {fmtMoney(h * (worker.hourlyRate || 0))}</div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+      </div>
+    );
+  };
+
+  // ── TIME RANGES ─────────────────────────────────────────────────
+  const renderTimeRanges = () => (
+    <div>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 20 }}>
+        <h2 style={{ margin: 0, fontSize: 20, fontWeight: 700, color: "#F0EDE6", fontFamily: "'DM Serif Display', serif" }}>Rangos Horarios</h2>
+        <Btn onClick={() => { setFormData({ name: "", start: "08:00", end: "14:00", color: "#F5C842", split: false, start2: "17:00", end2: "21:00" }); setModal("addTimeRange"); }} style={{ padding: "8px 14px", fontSize: 13 }}><Icon d={IC.plus} size={16} /> Nuevo</Btn>
+      </div>
+      <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+        {state.timeRanges.map(tr => {
+          const h = trHours(tr);
+          return (
+            <div key={tr.id} style={{ background: "rgba(255,255,255,0.04)", borderRadius: 16, padding: 16, display: "flex", alignItems: "center", gap: 14, borderLeft: `4px solid ${tr.color}` }}>
+              <div style={{ width: 48, height: 48, borderRadius: 14, background: `${tr.color}22`, color: tr.color, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+                <Icon d={tr.split ? IC.split : IC.clock} size={22} color={tr.color} />
+              </div>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ fontSize: 15, fontWeight: 600, color: "#F0EDE6", display: "flex", alignItems: "center", gap: 6 }}>
+                  {tr.name} {tr.split && <SplitBadge />}
+                </div>
+                <div style={{ fontSize: 13, color: "#9B97A0", marginTop: 2 }}>
+                  {trDisplay(tr)} · {h.toFixed(1)}h
+                </div>
+                {tr.split && (
+                  <div style={{ fontSize: 11, color: "#6B6780", marginTop: 2 }}>
+                    Bloque 1: {rawH(tr.start, tr.end).toFixed(1)}h · Bloque 2: {rawH(tr.start2, tr.end2).toFixed(1)}h
+                  </div>
+                )}
+              </div>
+              <div style={{ display: "flex", gap: 6 }}>
+                <button onClick={() => { setFormData({ ...tr }); setModal("editTimeRange"); }} style={{ background: "rgba(255,255,255,0.06)", border: "none", borderRadius: 10, padding: 8, cursor: "pointer", color: "#9B97A0" }}><Icon d={IC.edit} size={16} /></button>
+                <button onClick={() => { if (confirm(`¿Eliminar "${tr.name}"?`)) dispatch({ type: "DELETE_TIME_RANGE", payload: tr.id }); }} style={{ background: "rgba(231,76,60,0.1)", border: "none", borderRadius: 10, padding: 8, cursor: "pointer", color: "#E74C3C" }}><Icon d={IC.trash} size={16} /></button>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+
+  // ── MODALS ──────────────────────────────────────────────────────
+  const renderModals = () => {
+    if (!modal) return null;
+
+    // Worker
+    if (modal === "addWorker" || modal === "editWorker") {
+      const isEdit = modal === "editWorker";
+      return (
+        <Modal title={isEdit ? "Editar Trabajador" : "Nuevo Trabajador"} onClose={() => setModal(null)}>
+          <Inp label="Nombre" value={formData.name || ""} onChange={e => setFormData(f => ({ ...f, name: e.target.value }))} placeholder="Ej: Juan Pérez" />
+          <Inp label="Puesto" value={formData.role || ""} onChange={e => setFormData(f => ({ ...f, role: e.target.value }))} placeholder="Ej: Camarero" />
+          <Inp label="Precio/hora (€)" type="number" min="0" step="0.5" value={formData.hourlyRate ?? ""} onChange={e => setFormData(f => ({ ...f, hourlyRate: parseFloat(e.target.value) || 0 }))} placeholder="12" />
+          <div style={{ marginBottom: 16 }}>
+            <label style={{ display: "block", fontSize: 12, fontWeight: 600, color: "#9B97A0", marginBottom: 8, textTransform: "uppercase", letterSpacing: 1 }}>Color</label>
+            <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+              {COLORS.map(c => <button key={c} onClick={() => setFormData(f => ({ ...f, color: c }))} style={{ width: 36, height: 36, borderRadius: 10, background: c, border: formData.color === c ? "3px solid #F0EDE6" : "3px solid transparent", cursor: "pointer" }} />)}
+            </div>
+          </div>
+          {formData.hourlyRate > 0 && (
+            <div style={{ background: "rgba(107,191,89,0.1)", borderRadius: 12, padding: "10px 14px", marginBottom: 16, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+              <span style={{ fontSize: 13, color: "#9B97A0" }}>Jornada 8h/día =</span>
+              <span style={{ fontSize: 15, fontWeight: 700, color: "#6BBF59" }}>{fmtMoney((formData.hourlyRate || 0) * 8)}/día</span>
+            </div>
+          )}
+          <Btn onClick={() => { if (!formData.name?.trim()) return; dispatch({ type: isEdit ? "EDIT_WORKER" : "ADD_WORKER", payload: isEdit ? formData : { ...formData, id: `w-${uid()}` } }); setModal(null); }} style={{ width: "100%", justifyContent: "center" }}><Icon d={IC.check} size={18} /> {isEdit ? "Guardar" : "Añadir Trabajador"}</Btn>
+        </Modal>
+      );
+    }
+
+    // Time Range (with split toggle!)
+    if (modal === "addTimeRange" || modal === "editTimeRange") {
+      const isEdit = modal === "editTimeRange";
+      const isSplit = formData.split || false;
+
+      let totalH = 0;
+      if (formData.start && formData.end) totalH += rawH(formData.start, formData.end);
+      if (isSplit && formData.start2 && formData.end2) totalH += rawH(formData.start2, formData.end2);
+
+      return (
+        <Modal title={isEdit ? "Editar Rango Horario" : "Nuevo Rango Horario"} onClose={() => setModal(null)}>
+          <Inp label="Nombre" value={formData.name || ""} onChange={e => setFormData(f => ({ ...f, name: e.target.value }))} placeholder="Ej: Turno Mañana" />
+
+          {/* Split toggle */}
+          <button onClick={() => setFormData(f => ({ ...f, split: !f.split }))}
+            style={{
+              display: "flex", alignItems: "center", gap: 10, width: "100%", marginBottom: 16,
+              padding: "12px 14px", borderRadius: 12, cursor: "pointer", transition: "all .25s",
+              background: isSplit ? "rgba(155,89,182,0.15)" : "rgba(255,255,255,0.04)",
+              border: isSplit ? "2px solid #9B59B6" : "2px solid rgba(255,255,255,0.08)",
+            }}>
+            <div style={{ width: 36, height: 36, borderRadius: 10, background: isSplit ? "rgba(155,89,182,0.25)" : "rgba(255,255,255,0.06)", display: "flex", alignItems: "center", justifyContent: "center", transition: "all .25s" }}>
+              <Icon d={IC.split} size={18} color={isSplit ? "#9B59B6" : "#6B6780"} />
+            </div>
+            <div style={{ flex: 1, textAlign: "left" }}>
+              <div style={{ fontSize: 14, fontWeight: 600, color: isSplit ? "#9B59B6" : "#F0EDE6" }}>Turno Partido</div>
+              <div style={{ fontSize: 11, color: "#6B6780" }}>{isSplit ? "2 bloques horarios con descanso" : "Activa para definir 2 bloques"}</div>
+            </div>
+            <div style={{ width: 44, height: 24, borderRadius: 12, padding: 2, background: isSplit ? "#9B59B6" : "rgba(255,255,255,0.12)", transition: "background .25s", display: "flex", alignItems: "center", justifyContent: isSplit ? "flex-end" : "flex-start" }}>
+              <div style={{ width: 20, height: 20, borderRadius: 10, background: "#F0EDE6", transition: "all .25s", boxShadow: "0 1px 3px rgba(0,0,0,0.3)" }} />
+            </div>
+          </button>
+
+          {/* Block 1 */}
+          {isSplit && <label style={{ display: "block", fontSize: 12, fontWeight: 600, color: "#9B59B6", marginBottom: 6, textTransform: "uppercase", letterSpacing: 1 }}>① Primer bloque</label>}
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+            <Inp label={isSplit ? "" : "Hora inicio"} type="time" value={formData.start || "08:00"} onChange={e => setFormData(f => ({ ...f, start: e.target.value }))} />
+            <Inp label={isSplit ? "" : "Hora fin"} type="time" value={formData.end || "14:00"} onChange={e => setFormData(f => ({ ...f, end: e.target.value }))} />
+          </div>
+          {isSplit && formData.start && formData.end && (
+            <div style={{ textAlign: "center", marginBottom: 8, fontSize: 12, color: "#9B97A0" }}>
+              Bloque 1: <strong style={{ color: "#F0EDE6" }}>{rawH(formData.start, formData.end).toFixed(1)}h</strong>
+            </div>
+          )}
+
+          {/* Divider + Block 2 */}
+          {isSplit && (
+            <div style={{ animation: "fadeIn .25s ease" }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 12, marginTop: 4 }}>
+                <div style={{ flex: 1, height: 1, background: "rgba(155,89,182,0.3)" }} />
+                <span style={{ fontSize: 11, fontWeight: 700, color: "#9B59B6", textTransform: "uppercase", letterSpacing: 1 }}>Descanso</span>
+                <div style={{ flex: 1, height: 1, background: "rgba(155,89,182,0.3)" }} />
+              </div>
+              <label style={{ display: "block", fontSize: 12, fontWeight: 600, color: "#9B59B6", marginBottom: 6, textTransform: "uppercase", letterSpacing: 1 }}>② Segundo bloque</label>
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+                <Inp label="" type="time" value={formData.start2 || "17:00"} onChange={e => setFormData(f => ({ ...f, start2: e.target.value }))} />
+                <Inp label="" type="time" value={formData.end2 || "21:00"} onChange={e => setFormData(f => ({ ...f, end2: e.target.value }))} />
+              </div>
+              {formData.start2 && formData.end2 && (
+                <div style={{ textAlign: "center", marginBottom: 8, fontSize: 12, color: "#9B97A0" }}>
+                  Bloque 2: <strong style={{ color: "#F0EDE6" }}>{rawH(formData.start2, formData.end2).toFixed(1)}h</strong>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Color */}
+          <div style={{ marginBottom: 16 }}>
+            <label style={{ display: "block", fontSize: 12, fontWeight: 600, color: "#9B97A0", marginBottom: 8, textTransform: "uppercase", letterSpacing: 1 }}>Color</label>
+            <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+              {COLORS.map(c => <button key={c} onClick={() => setFormData(f => ({ ...f, color: c }))} style={{ width: 36, height: 36, borderRadius: 10, background: c, border: formData.color === c ? "3px solid #F0EDE6" : "3px solid transparent", cursor: "pointer" }} />)}
+            </div>
+          </div>
+
+          {/* Total preview */}
+          {totalH > 0 && (
+            <div style={{
+              background: isSplit ? "rgba(155,89,182,0.08)" : "rgba(255,255,255,0.04)",
+              borderRadius: 12, padding: "10px 14px", marginBottom: 16,
+              border: isSplit ? "1px solid rgba(155,89,182,0.2)" : "1px solid transparent",
+              display: "flex", justifyContent: "space-between", alignItems: "center",
+            }}>
+              <span style={{ fontSize: 13, color: "#9B97A0" }}>Duración total</span>
+              <span style={{ fontSize: 16, fontWeight: 700, color: "#F0EDE6" }}>{totalH.toFixed(1)}h</span>
+            </div>
+          )}
+
+          <Btn onClick={() => {
+            if (!formData.name?.trim()) return;
+            const payload = {
+              ...formData,
+              split: !!formData.split,
+              start2: formData.split ? (formData.start2 || "") : "",
+              end2: formData.split ? (formData.end2 || "") : "",
+            };
+            dispatch({ type: isEdit ? "EDIT_TIME_RANGE" : "ADD_TIME_RANGE", payload: isEdit ? payload : { ...payload, id: `tr-${uid()}` } });
+            setModal(null);
+          }} style={{ width: "100%", justifyContent: "center" }}><Icon d={IC.check} size={18} /> {isEdit ? "Guardar" : "Añadir Rango"}</Btn>
+        </Modal>
+      );
+    }
+
+    // Add Shift (simple, single range pick)
+    if (modal === "addShift") {
+      const selW = state.workers.find(w => w.id === formData.workerId);
+      return (
+        <Modal title="Asignar Turno" onClose={() => setModal(null)}>
+          <div style={{ marginBottom: 16 }}>
+            <label style={{ display: "block", fontSize: 12, fontWeight: 600, color: "#9B97A0", marginBottom: 8, textTransform: "uppercase", letterSpacing: 1 }}>Trabajador</label>
+            <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+              {state.workers.map(w => (
+                <button key={w.id} onClick={() => setFormData(f => ({ ...f, workerId: w.id }))} style={{
+                  display: "flex", alignItems: "center", gap: 10, padding: "10px 14px", borderRadius: 12, cursor: "pointer",
+                  background: formData.workerId === w.id ? `${w.color}22` : "rgba(255,255,255,0.04)",
+                  border: formData.workerId === w.id ? `2px solid ${w.color}` : "2px solid transparent", transition: "all .2s",
+                }}>
+                  <div style={{ width: 32, height: 32, borderRadius: 8, background: `${w.color}33`, color: w.color, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 14, fontWeight: 700 }}>{w.name.charAt(0)}</div>
+                  <span style={{ fontSize: 14, color: "#F0EDE6", fontWeight: 500 }}>{w.name}</span>
+                  <span style={{ fontSize: 11, color: "#6B6780", marginLeft: "auto" }}>{fmtMoney(w.hourlyRate || 0)}/h</span>
+                </button>
+              ))}
+            </div>
+          </div>
+          <div style={{ marginBottom: 20 }}>
+            <label style={{ display: "block", fontSize: 12, fontWeight: 600, color: "#9B97A0", marginBottom: 8, textTransform: "uppercase", letterSpacing: 1 }}>Rango Horario</label>
+            <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+              {state.timeRanges.map(tr => {
+                const h = trHours(tr);
+                return (
+                  <button key={tr.id} onClick={() => setFormData(f => ({ ...f, timeRangeId: tr.id }))} style={{
+                    display: "flex", alignItems: "center", gap: 10, padding: "10px 14px", borderRadius: 12, cursor: "pointer",
+                    background: formData.timeRangeId === tr.id ? `${tr.color}22` : "rgba(255,255,255,0.04)",
+                    border: formData.timeRangeId === tr.id ? `2px solid ${tr.color}` : "2px solid transparent", transition: "all .2s",
+                  }}>
+                    <div style={{ width: 32, height: 32, borderRadius: 8, background: `${tr.color}33`, color: tr.color, display: "flex", alignItems: "center", justifyContent: "center" }}>
+                      <Icon d={tr.split ? IC.split : IC.clock} size={16} color={tr.color} />
+                    </div>
+                    <div style={{ flex: 1, textAlign: "left" }}>
+                      <div style={{ display: "flex", alignItems: "center", gap: 5 }}>
+                        <span style={{ fontSize: 14, color: "#F0EDE6", fontWeight: 500 }}>{tr.name}</span>
+                        {tr.split && <SplitBadge small />}
+                      </div>
+                      <div style={{ fontSize: 11, color: "#6B6780" }}>
+                        {trDisplay(tr)} · {h.toFixed(1)}h{selW ? ` · ${fmtMoney(h * (selW.hourlyRate || 0))}` : ""}
+                      </div>
+                    </div>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+          <Btn onClick={() => {
+            if (!formData.workerId || !formData.timeRangeId) return;
+            dispatch({ type: "ADD_SHIFT", payload: { id: `s-${uid()}`, workerId: formData.workerId, date: formData.date, timeRangeId: formData.timeRangeId } });
+            setModal(null);
+          }} style={{ width: "100%", justifyContent: "center", opacity: (!formData.workerId || !formData.timeRangeId) ? 0.4 : 1 }}>
+            <Icon d={IC.check} size={18} /> Asignar Turno
+          </Btn>
+        </Modal>
+      );
+    }
+
+    return null;
+  };
+
+  // ── LAYOUT ──────────────────────────────────────────────────────
+  const tabsList = [
+    { key: "calendar", icon: IC.cal, label: "Calendario" },
+    { key: "workers", icon: IC.users, label: "Equipo" },
+    { key: "hours", icon: IC.clock, label: "Horarios" },
+  ];
+  return (
+    <div style={{ background: "#12121F", minHeight: "100vh", maxWidth: 480, margin: "0 auto", fontFamily: "'DM Sans', 'Segoe UI', sans-serif", position: "relative", paddingBottom: 80 }}>
+      <style>{`
+        @import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=DM+Serif+Display&display=swap');
+        * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+        @keyframes fadeIn { from { opacity: 0 } to { opacity: 1 } }
+        @keyframes slideUp { from { transform: translateY(100%) } to { transform: translateY(0) } }
+        ::-webkit-scrollbar { width: 4px; }
+        ::-webkit-scrollbar-track { background: transparent; }
+        ::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.1); border-radius: 4px; }
+        body { margin: 0; background: #12121F; }
+      `}</style>
+      {tab !== "profile" && (
+        <div style={{ padding: "20px 20px 16px", background: "linear-gradient(180deg, #1A1A2E 0%, #12121F 100%)" }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+            <div style={{ width: 42, height: 42, borderRadius: 13, background: "linear-gradient(135deg, #E8654A, #F5C842)", display: "flex", alignItems: "center", justifyContent: "center" }}><Icon d={IC.users} size={22} color="#fff" /></div>
+            <div>
+              <h1 style={{ margin: 0, fontSize: 22, fontWeight: 700, color: "#F0EDE6", fontFamily: "'DM Serif Display', serif", lineHeight: 1.2 }}>Shiftly</h1>
+              <p style={{ margin: 0, fontSize: 12, color: "#6B6780" }}>{state.workers.length} trabajadores · {state.shifts.length} turnos</p>
+            </div>
+            <button onClick={exportAllToExcel} title="Exportar a Excel" style={{ marginLeft: "auto", background: "rgba(107,191,89,0.15)", border: "none", borderRadius: 12, padding: 10, cursor: "pointer", color: "#6BBF59" }}><Icon d={IC.download} size={20} color="#6BBF59" /></button>
+          </div>
+        </div>
+      )}
+      <div style={{ padding: tab === "profile" ? "16px 16px 24px" : "8px 16px 24px" }}>
+        {tab === "calendar" && renderCalendar()}
+        {tab === "workers" && renderWorkers()}
+        {tab === "hours" && renderTimeRanges()}
+        {tab === "profile" && renderProfile()}
+      </div>
+      <div style={{ position: "fixed", bottom: 0, left: "50%", transform: "translateX(-50%)", width: "100%", maxWidth: 480, background: "linear-gradient(180deg, transparent 0%, #12121F 20%)", padding: "12px 20px 20px" }}>
+        <div style={{ display: "flex", justifyContent: "space-around", background: "rgba(26,26,46,0.95)", backdropFilter: "blur(20px)", borderRadius: 20, padding: "8px 4px", border: "1px solid rgba(255,255,255,0.06)", boxShadow: "0 -4px 24px rgba(0,0,0,0.3)" }}>
+          {tabsList.map(t => {
+            const active = t.key === tab || (t.key === "workers" && tab === "profile");
+            return (
+              <button key={t.key} onClick={() => { setTab(t.key); if (t.key !== "workers") setProfileWorkerId(null); }} style={{
+                display: "flex", flexDirection: "column", alignItems: "center", gap: 4,
+                background: active ? "rgba(232,101,74,0.12)" : "transparent",
+                border: "none", borderRadius: 14, padding: "8px 20px", cursor: "pointer", transition: "all .25s",
+              }}>
+                <Icon d={t.icon} size={20} color={active ? "#E8654A" : "#6B6780"} />
+                <span style={{ fontSize: 11, fontWeight: 600, letterSpacing: 0.3, color: active ? "#E8654A" : "#6B6780" }}>{t.label}</span>
+              </button>
+            );
+          })}
+        </div>
+      </div>
+      {renderModals()}
+    </div>
+  );
+}
+
+// ─── Render ─────────────────────────────────────────────────────────
+const root = ReactDOM.createRoot(document.getElementById('root'));
+root.render(<WorkerManager />);
+
+// Hide splash
+setTimeout(() => document.getElementById('splash')?.classList.add('hide'), 300);
+setTimeout(() => document.getElementById('splash')?.remove(), 600);
+</script>
+<script>
+// Service Worker registration
+if ('serviceWorker' in navigator) {
+  window.addEventListener('load', () => {
+    navigator.serviceWorker.register('./sw.js')
+      .then(r => console.log('SW registered:', r.scope))
+      .catch(e => console.log('SW failed:', e));
+  });
+}
+</script>
+</body>
+</html>
